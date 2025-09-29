@@ -54,6 +54,10 @@ app.get("/", (req, res) => {
 // Auth routes (sign-up, confirm, sign-in)
 app.use("/auth", authRoutes);
 
+// Swagger API documentation
+const swaggerRoutes = require("./routes/swagger");
+app.use("/api-docs", swaggerRoutes);
+
 // Example protected route
 app.get("/api/secure", authenticateCognito, (req, res) => {
   res.json({

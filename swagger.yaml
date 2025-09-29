@@ -1,0 +1,754 @@
+openapi: 3.0.3
+info:
+  title: Employee Management API
+  description: |
+    A serverless employee management system built with AWS Lambda, DynamoDB, API Gateway, and Cognito authentication.
+    
+    ## Authentication
+    Most endpoints require authentication using AWS Cognito JWT tokens. Include the access token in the Authorization header:
+    ```
+    Authorization: Bearer {accessToken}
+    ```
+    
+    ## Base URL
+    - Development: https://ec4msgjtx3.execute-api.ap-south-1.amazonaws.com/dev
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: ISC
+
+servers:
+  - url: https://ec4msgjtx3.execute-api.ap-south-1.amazonaws.com/dev
+    description: Development server
+  - url: https://ec4msgjtx3.execute-api.ap-south-1.amazonaws.com/prod
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication endpoints (signup, signin, confirm)
+  - name: Employees
+    description: Employee CRUD operations
+
+paths:
+  /auth/signup:
+    post:
+      tags:
+        - Authentication
+      summary: Sign up a new user
+      description: Register a new user account with AWS Cognito. User will receive a confirmation code via email.
+      operationId: signup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: Test@123456
+                  description: Must contain uppercase, lowercase, number, and special character
+                name:
+                  type: string
+                  example: John Doe
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User registered successfully. Check your email for confirmation code.
+                  userSub:
+                    type: string
+                    example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  userConfirmed:
+                    type: boolean
+                    example: false
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/confirm:
+    post:
+      tags:
+        - Authentication
+      summary: Confirm user registration
+      description: Verify user email with the confirmation code sent during signup
+      operationId: confirm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                code:
+                  type: string
+                  example: "123456"
+                  description: 6-digit confirmation code from email
+      responses:
+        '200':
+          description: User confirmed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: User confirmed successfully. You can now sign in.
+        '400':
+          description: Invalid or expired code
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/signin:
+    post:
+      tags:
+        - Authentication
+      summary: Sign in user
+      description: Authenticate user and receive JWT tokens
+      operationId: signin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: user@example.com
+                password:
+                  type: string
+                  format: password
+                  example: Test@123456
+      responses:
+        '200':
+          description: Sign-in successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Sign-in successful
+                  idToken:
+                    type: string
+                    description: JWT ID token
+                  accessToken:
+                    type: string
+                    description: JWT access token (use this for API authorization)
+                  refreshToken:
+                    type: string
+                    description: Refresh token for getting new tokens
+                  expiresIn:
+                    type: integer
+                    example: 3600
+                    description: Token expiration time in seconds
+        '401':
+          description: Authentication failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/employees:
+    get:
+      tags:
+        - Employees
+      summary: Get all employees
+      description: Retrieve all employees with optional filtering and pagination
+      operationId: getAllEmployees
+      security:
+        - CognitoAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of employees to return
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: status
+          in: query
+          description: Filter by employee status
+          schema:
+            type: string
+            enum: [active, inactive, terminated]
+        - name: lastKey
+          in: query
+          description: Pagination token from previous response
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Employees retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Employees retrieved successfully
+                  data:
+                    type: object
+                    properties:
+                      employees:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Employee'
+                      count:
+                        type: integer
+                        example: 10
+                      lastKey:
+                        type: string
+                        nullable: true
+                        description: Pagination token for next page (null if no more results)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    post:
+      tags:
+        - Employees
+      summary: Create employee
+      description: Create a new employee record
+      operationId: createEmployee
+      security:
+        - CognitoAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeInput'
+      responses:
+        '201':
+          description: Employee created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Employee created successfully
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          description: Employee with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/{id}:
+    get:
+      tags:
+        - Employees
+      summary: Get employee by ID
+      description: Retrieve a specific employee by their ID
+      operationId: getEmployeeById
+      security:
+        - CognitoAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Employee ID
+          schema:
+            type: string
+            example: EMP001001
+      responses:
+        '200':
+          description: Employee retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Employee retrieved successfully
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Employee not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    put:
+      tags:
+        - Employees
+      summary: Update employee
+      description: Update an existing employee's information (partial update supported)
+      operationId: updateEmployee
+      security:
+        - CognitoAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Employee ID
+          schema:
+            type: string
+            example: EMP001001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeUpdate'
+      responses:
+        '200':
+          description: Employee updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Employee updated successfully
+                  data:
+                    $ref: '#/components/schemas/Employee'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Employee not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Employee with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+    delete:
+      tags:
+        - Employees
+      summary: Delete employee
+      description: Delete an employee record permanently
+      operationId: deleteEmployee
+      security:
+        - CognitoAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Employee ID
+          schema:
+            type: string
+            example: EMP001001
+      responses:
+        '200':
+          description: Employee deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Employee deleted successfully
+                  data:
+                    type: object
+                    properties:
+                      employeeId:
+                        type: string
+                        example: EMP001001
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Employee not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/employees/search:
+    get:
+      tags:
+        - Employees
+      summary: Search employees
+      description: Search employees by name or email (case-insensitive, partial match)
+      operationId: searchEmployees
+      security:
+        - CognitoAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search term (searches in name and email)
+          schema:
+            type: string
+            example: john
+        - name: search
+          in: query
+          description: Alternative parameter name for search term
+          schema:
+            type: string
+            example: john
+      responses:
+        '200':
+          description: Search completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Search completed successfully
+                  data:
+                    type: object
+                    properties:
+                      employees:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Employee'
+                      count:
+                        type: integer
+                        example: 5
+                      searchTerm:
+                        type: string
+                        example: john
+        '400':
+          description: Search term is required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    CognitoAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: AWS Cognito JWT access token. Obtain by calling /auth/signin
+
+  schemas:
+    Employee:
+      type: object
+      properties:
+        employeeId:
+          type: string
+          example: EMP001001
+          description: Auto-generated employee ID (format EMP + 6 digits)
+        firstName:
+          type: string
+          example: John
+        middleName:
+          type: string
+          example: Michael
+        lastName:
+          type: string
+          example: Doe
+        fullName:
+          type: string
+          example: John Michael Doe
+          description: Auto-generated from first, middle, and last name
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        mobile:
+          type: string
+          pattern: '^\d{10}$'
+          example: "9876543210"
+          description: 10-digit mobile number
+        address:
+          type: object
+          properties:
+            street:
+              type: string
+              example: 123 Main Street
+            city:
+              type: string
+              example: Mumbai
+            state:
+              type: string
+              example: Maharashtra
+            zipCode:
+              type: string
+              example: "400001"
+            country:
+              type: string
+              example: India
+        designation:
+          type: string
+          example: Software Engineer
+        department:
+          type: string
+          example: Engineering
+        dateOfJoining:
+          type: string
+          format: date
+          example: "2025-01-15"
+        salary:
+          type: number
+          example: 75000
+        status:
+          type: string
+          enum: [active, inactive, terminated]
+          example: active
+        createdAt:
+          type: string
+          format: date-time
+          example: "2025-09-30T02:00:00.000Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2025-09-30T02:00:00.000Z"
+
+    EmployeeInput:
+      type: object
+      required:
+        - firstName
+        - lastName
+        - email
+        - mobile
+        - designation
+      properties:
+        firstName:
+          type: string
+          example: John
+        middleName:
+          type: string
+          example: Michael
+        lastName:
+          type: string
+          example: Doe
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        mobile:
+          type: string
+          pattern: '^\d{10}$'
+          example: "9876543210"
+          description: Exactly 10 digits
+        address:
+          type: object
+          properties:
+            street:
+              type: string
+              example: 123 Main Street
+            city:
+              type: string
+              example: Mumbai
+            state:
+              type: string
+              example: Maharashtra
+            zipCode:
+              type: string
+              example: "400001"
+            country:
+              type: string
+              example: India
+        designation:
+          type: string
+          example: Software Engineer
+        department:
+          type: string
+          example: Engineering
+        dateOfJoining:
+          type: string
+          format: date
+          example: "2025-01-15"
+        salary:
+          type: number
+          example: 75000
+        status:
+          type: string
+          enum: [active, inactive, terminated]
+          default: active
+          example: active
+
+    EmployeeUpdate:
+      type: object
+      description: Partial update - only include fields you want to change
+      properties:
+        firstName:
+          type: string
+          example: John
+        middleName:
+          type: string
+          example: Michael
+        lastName:
+          type: string
+          example: Doe
+        email:
+          type: string
+          format: email
+          example: john.doe@example.com
+        mobile:
+          type: string
+          pattern: '^\d{10}$'
+          example: "9876543210"
+        address:
+          type: object
+          properties:
+            street:
+              type: string
+            city:
+              type: string
+            state:
+              type: string
+            zipCode:
+              type: string
+            country:
+              type: string
+        designation:
+          type: string
+          example: Senior Software Engineer
+        department:
+          type: string
+          example: Engineering
+        dateOfJoining:
+          type: string
+          format: date
+        salary:
+          type: number
+          example: 95000
+        status:
+          type: string
+          enum: [active, inactive, terminated]
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Error description
+        errors:
+          type: array
+          items:
+            type: string
+          example: ["Error detail 1", "Error detail 2"]
+        code:
+          type: string
+          example: ErrorCode
+
+  responses:
+    UnauthorizedError:
+      description: Unauthorized - Missing or invalid authentication token
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+                example: Unauthorized
+
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              success:
+                type: boolean
+                example: false
+              message:
+                type: string
+                example: Validation failed
+              errors:
+                type: array
+                items:
+                  type: string
+                example:
+                  - First name is required
+                  - Invalid email format
+                  - Mobile number must be 10 digits
+
+    ServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

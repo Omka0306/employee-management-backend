@@ -1,0 +1,255 @@
+service: employee-management-api
+
+frameworkVersion: '3'
+
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: ${env:AWS_REGION, 'ap-south-1'}
+  stage: ${opt:stage, 'dev'}
+  memorySize: 256
+  timeout: 30
+  
+  environment:
+    EMPLOYEES_TABLE: ${self:service}-employees-${self:provider.stage}
+    COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID}
+    COGNITO_APP_CLIENT_ID: ${env:COGNITO_APP_CLIENT_ID}
+    COGNITO_APP_CLIENT_SECRET: ${env:COGNITO_APP_CLIENT_SECRET}
+    COGNITO_REGION: ${env:COGNITO_REGION}
+    STAGE: ${self:provider.stage}
+    AWS_NODEJS_CONNECTION_REUSE_ENABLED: 1
+  
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.EMPLOYEES_TABLE}"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.EMPLOYEES_TABLE}/index/*"
+
+functions:
+  # Authentication Functions
+  signup:
+    handler: src/lambda/auth/signup.handler
+    events:
+      - http:
+          path: auth/signup
+          method: post
+          cors: true
+
+  confirm:
+    handler: src/lambda/auth/confirm.handler
+    events:
+      - http:
+          path: auth/confirm
+          method: post
+          cors: true
+
+  signin:
+    handler: src/lambda/auth/signin.handler
+    events:
+      - http:
+          path: auth/signin
+          method: post
+          cors: true
+
+  # Swagger Documentation
+  swaggerUI:
+    handler: src/lambda/swagger/docs.handler
+    events:
+      - http:
+          path: api-docs
+          method: get
+          cors: true
+
+  swaggerSpec:
+    handler: src/lambda/swagger/spec.handler
+    events:
+      - http:
+          path: swagger.yaml
+          method: get
+          cors: true
+
+  # Employee Functions
+  # Create Employee
+  createEmployee:
+    handler: src/lambda/employees/create.handler
+    events:
+      - http:
+          path: api/employees
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Get All Employees
+  getAllEmployees:
+    handler: src/lambda/employees/getAll.handler
+    events:
+      - http:
+          path: api/employees
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Get Employee by ID
+  getEmployee:
+    handler: src/lambda/employees/getById.handler
+    events:
+      - http:
+          path: api/employees/{id}
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Update Employee
+  updateEmployee:
+    handler: src/lambda/employees/update.handler
+    events:
+      - http:
+          path: api/employees/{id}
+          method: put
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Delete Employee
+  deleteEmployee:
+    handler: src/lambda/employees/delete.handler
+    events:
+      - http:
+          path: api/employees/{id}
+          method: delete
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Search Employees
+  searchEmployees:
+    handler: src/lambda/employees/search.handler
+    events:
+      - http:
+          path: api/employees/search
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+resources:
+  Resources:
+    # DynamoDB Table for Employees
+    EmployeesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.EMPLOYEES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: employeeId
+            AttributeType: S
+          - AttributeName: email
+            AttributeType: S
+          - AttributeName: createdAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: employeeId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: EmailIndex
+            KeySchema:
+              - AttributeName: email
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: CreatedAtIndex
+            KeySchema:
+              - AttributeName: createdAt
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Environment
+            Value: ${self:provider.stage}
+          - Key: Service
+            Value: ${self:service}
+
+    # Cognito User Pool Authorizer
+    ApiGatewayAuthorizer:
+      Type: AWS::ApiGateway::Authorizer
+      Properties:
+        Name: CognitoAuthorizer
+        Type: COGNITO_USER_POOLS
+        IdentitySource: method.request.header.Authorization
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ProviderARNs:
+          - arn:aws:cognito-idp:${self:provider.region}:${aws:accountId}:userpool/${env:COGNITO_USER_POOL_ID}
+
+    # API Gateway Response for CORS
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+
+    GatewayResponseDefault5XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+        ResponseType: DEFAULT_5XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+
+  Outputs:
+    ApiEndpoint:
+      Description: API Gateway endpoint URL
+      Value:
+        Fn::Join:
+          - ''
+          - - 'https://'
+            - Ref: ApiGatewayRestApi
+            - '.execute-api.'
+            - ${self:provider.region}
+            - '.amazonaws.com/'
+            - ${self:provider.stage}
+    
+    EmployeesTableName:
+      Description: DynamoDB table name for employees
+      Value: ${self:provider.environment.EMPLOYEES_TABLE}
+
+plugins:
+  - serverless-dotenv-plugin
+  - serverless-offline
+  - serverless-dynamodb-local

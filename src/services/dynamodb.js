@@ -1,0 +1,279 @@
+const { DynamoDBClient } = require('@aws-sdk/client-dynamodb');
+const {
+  DynamoDBDocumentClient,
+  PutCommand,
+  GetCommand,
+  UpdateCommand,
+  DeleteCommand,
+  ScanCommand,
+  QueryCommand
+} = require('@aws-sdk/lib-dynamodb');
+
+const EMPLOYEES_TABLE = process.env.EMPLOYEES_TABLE;
+const COUNTER_TABLE = process.env.EMPLOYEES_TABLE; // Use same table for counter
+
+// Initialize DynamoDB Client
+const client = new DynamoDBClient({
+  region: process.env.COGNITO_REGION || 'ap-south-1'
+});
+
+const docClient = DynamoDBDocumentClient.from(client, {
+  marshallOptions: {
+    removeUndefinedValues: true,
+    convertEmptyValues: false
+  }
+});
+
+/**
+ * DynamoDB Service for Employee Operations
+ */
+class DynamoDBService {
+  /**
+   * Get next employee ID (auto-increment)
+   * @returns {Promise<string>}
+   */
+  static async getNextEmployeeId() {
+    const params = {
+      TableName: COUNTER_TABLE,
+      Key: { employeeId: 'COUNTER' },
+      UpdateExpression: 'SET #counter = if_not_exists(#counter, :start) + :increment',
+      ExpressionAttributeNames: {
+        '#counter': 'counter'
+      },
+      ExpressionAttributeValues: {
+        ':start': 1000, // Start from 1001
+        ':increment': 1
+      },
+      ReturnValues: 'UPDATED_NEW'
+    };
+
+    try {
+      const result = await docClient.send(new UpdateCommand(params));
+      const nextId = result.Attributes.counter;
+      return `EMP${String(nextId).padStart(6, '0')}`; // Format: EMP001001, EMP001002, etc.
+    } catch (error) {
+      console.error('Error generating employee ID:', error);
+      throw new Error('Failed to generate employee ID');
+    }
+  }
+
+  /**
+   * Create a new employee
+   * @param {Object} employee - Employee data
+   * @returns {Promise<Object>}
+   */
+  static async createEmployee(employee) {
+    // Generate numeric employee ID
+    const employeeId = await this.getNextEmployeeId();
+    employee.employeeId = employeeId;
+    const params = {
+      TableName: EMPLOYEES_TABLE,
+      Item: employee,
+      ConditionExpression: 'attribute_not_exists(employeeId)'
+    };
+
+    try {
+      await docClient.send(new PutCommand(params));
+      return employee;
+    } catch (error) {
+      if (error.name === 'ConditionalCheckFailedException') {
+        throw new Error('Employee with this ID already exists');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Get employee by ID
+   * @param {string} employeeId 
+   * @returns {Promise<Object|null>}
+   */
+  static async getEmployeeById(employeeId) {
+    const params = {
+      TableName: EMPLOYEES_TABLE,
+      Key: { employeeId }
+    };
+
+    const result = await docClient.send(new GetCommand(params));
+    return result.Item || null;
+  }
+
+  /**
+   * Get all employees with optional filtering
+   * @param {Object} options - Query options (limit, lastKey, status)
+   * @returns {Promise<Object>}
+   */
+  static async getAllEmployees(options = {}) {
+    const { limit = 50, lastKey, status } = options;
+
+    const params = {
+      TableName: EMPLOYEES_TABLE,
+      Limit: limit
+    };
+
+    if (lastKey) {
+      params.ExclusiveStartKey = lastKey;
+    }
+
+    if (status) {
+      params.FilterExpression = '#status = :status';
+      params.ExpressionAttributeNames = { '#status': 'status' };
+      params.ExpressionAttributeValues = { ':status': status };
+    }
+
+    const result = await docClient.send(new ScanCommand(params));
+
+    return {
+      items: result.Items || [],
+      lastKey: result.LastEvaluatedKey,
+      count: result.Count
+    };
+  }
+
+  /**
+   * Update employee
+   * @param {string} employeeId 
+   * @param {Object} updates - Fields to update
+   * @returns {Promise<Object>}
+   */
+  static async updateEmployee(employeeId, updates) {
+    // Build update expression dynamically
+    const updateExpressions = [];
+    const expressionAttributeNames = {};
+    const expressionAttributeValues = {};
+
+    // Fields that should not be updated by user
+    const excludedFields = ['employeeId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'];
+
+    Object.keys(updates).forEach((key, index) => {
+      if (!excludedFields.includes(key) && updates[key] !== undefined) {
+        const attrName = `#attr${index}`;
+        const attrValue = `:val${index}`;
+        updateExpressions.push(`${attrName} = ${attrValue}`);
+        expressionAttributeNames[attrName] = key;
+        expressionAttributeValues[attrValue] = updates[key];
+      }
+    });
+
+    // Always update the updatedAt timestamp
+    updateExpressions.push('#updatedAt = :updatedAt');
+    expressionAttributeNames['#updatedAt'] = 'updatedAt';
+    expressionAttributeValues[':updatedAt'] = new Date().toISOString();
+
+    // Update updatedBy if provided in updates
+    if (updates.updatedBy) {
+      updateExpressions.push('#updatedBy = :updatedBy');
+      expressionAttributeNames['#updatedBy'] = 'updatedBy';
+      expressionAttributeValues[':updatedBy'] = updates.updatedBy;
+    }
+
+    const params = {
+      TableName: EMPLOYEES_TABLE,
+      Key: { employeeId },
+      UpdateExpression: `SET ${updateExpressions.join(', ')}`,
+      ExpressionAttributeNames: expressionAttributeNames,
+      ExpressionAttributeValues: expressionAttributeValues,
+      ConditionExpression: 'attribute_exists(employeeId)',
+      ReturnValues: 'ALL_NEW'
+    };
+
+    try {
+      const result = await docClient.send(new UpdateCommand(params));
+      return result.Attributes;
+    } catch (error) {
+      if (error.name === 'ConditionalCheckFailedException') {
+        throw new Error('Employee not found');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Delete employee
+   * @param {string} employeeId 
+   * @returns {Promise<boolean>}
+   */
+  static async deleteEmployee(employeeId) {
+    const params = {
+      TableName: EMPLOYEES_TABLE,
+      Key: { employeeId },
+      ConditionExpression: 'attribute_exists(employeeId)'
+    };
+
+    try {
+      await docClient.send(new DeleteCommand(params));
+      return true;
+    } catch (error) {
+      if (error.name === 'ConditionalCheckFailedException') {
+        throw new Error('Employee not found');
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Search employees by name or email
+   * @param {string} searchTerm 
+   * @returns {Promise<Array>}
+   */
+  static async searchEmployees(searchTerm) {
+    const params = {
+      TableName: EMPLOYEES_TABLE,
+      FilterExpression: 'contains(#fullName, :searchTerm) OR contains(#email, :searchTerm)',
+      ExpressionAttributeNames: {
+        '#fullName': 'fullName',
+        '#email': 'email'
+      },
+      ExpressionAttributeValues: {
+        ':searchTerm': searchTerm.toLowerCase()
+      }
+    };
+
+    const result = await docClient.send(new ScanCommand(params));
+    return result.Items || [];
+  }
+
+  /**
+   * Get employee by email
+   * @param {string} email 
+   * @returns {Promise<Object|null>}
+   */
+  static async getEmployeeByEmail(email) {
+    const params = {
+      TableName: EMPLOYEES_TABLE,
+      IndexName: 'EmailIndex',
+      KeyConditionExpression: '#email = :email',
+      ExpressionAttributeNames: {
+        '#email': 'email'
+      },
+      ExpressionAttributeValues: {
+        ':email': email.toLowerCase()
+      }
+    };
+
+    const result = await docClient.send(new QueryCommand(params));
+    return result.Items && result.Items.length > 0 ? result.Items[0] : null;
+  }
+
+  /**
+   * Check if email exists (for duplicate validation)
+   * @param {string} email 
+   * @param {string} excludeEmployeeId - Employee ID to exclude from check
+   * @returns {Promise<boolean>}
+   */
+  static async emailExists(email, excludeEmployeeId = null) {
+    const employee = await this.getEmployeeByEmail(email);
+    
+    if (!employee) {
+      return false;
+    }
+
+    if (excludeEmployeeId && employee.employeeId === excludeEmployeeId) {
+      return false;
+    }
+
+    return true;
+  }
+}
+
+module.exports = DynamoDBService;
