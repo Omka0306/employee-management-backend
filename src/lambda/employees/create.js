@@ -1,47 +1,89 @@
 const Employee = require('../../models/employee');
 const DynamoDBService = require('../../services/dynamodb');
-const { successResponse, errorResponse, parseBody, getUserFromEvent } = require('../../helpers/response');
+const CognitoService = require('../../services/cognito');
+const { successResponse, errorResponse, parseBody } = require('../../helpers/response');
+const { extractUserFromEvent, requireRole, canAccessCompany } = require('../../middlewares/rbac');
 
-/**
- * Lambda handler to create a new employee
- * @param {Object} event - API Gateway event
- * @returns {Object} HTTP response
- */
 exports.handler = async (event) => {
   try {
-    console.log('Create Employee - Event:', JSON.stringify(event, null, 2));
 
-    // Parse request body
+    const user = extractUserFromEvent(event);
+    const authCheck = await requireRole('manager')(event);
+    if (authCheck) return authCheck;
+
     const body = parseBody(event);
     
-    // Get authenticated user info
-    const user = getUserFromEvent(event);
+    let companyId = body.companyId;
+    
+    if (user.role === 'manager') {
+      if (companyId && companyId !== user.companyId) {
+        return errorResponse(403, 'Managers can only create employees in their own company');
+      }
+      companyId = user.companyId;
+    }
 
-    // Create employee instance
+    const company = await DynamoDBService.getCompanyById(companyId);
+    if (!company) {
+      return errorResponse(404, 'Company not found');
+    }
+
+    if (!canAccessCompany(user, companyId)) {
+      return errorResponse(403, 'Access denied to this company');
+    }
+
+    const role = body.role || 'employee';
+    
+    if (user.role === 'manager' && (role === 'admin' || role === 'manager')) {
+      return errorResponse(403, 'Managers cannot create admin or manager accounts');
+    }
+
     const employeeData = {
       ...body,
+      companyId,
+      role,
       createdBy: user?.email || 'system',
       updatedBy: user?.email || 'system'
     };
 
     const employee = new Employee(employeeData);
 
-    // Validate employee data
     const validation = employee.validate();
     if (!validation.isValid) {
       return errorResponse(400, 'Validation failed', validation.errors);
     }
 
-    // Check if email already exists
     const emailExists = await DynamoDBService.emailExists(employee.email);
     if (emailExists) {
       return errorResponse(409, 'Employee with this email already exists');
     }
 
-    // Save to DynamoDB
+    let cognitoUser;
+    let temporaryPassword;
+    try {
+      const fullName = `${employee.firstName} ${employee.lastName}`;
+      cognitoUser = await CognitoService.createUser({
+        email: employee.email,
+        name: fullName,
+        role: employee.role,
+        companyId: employee.companyId
+      });
+      
+      temporaryPassword = cognitoUser.temporaryPassword;
+      employee.cognitoUserId = cognitoUser.userSub;
+
+      await CognitoService.addUserToGroup(employee.email, employee.role);
+    } catch (cognitoError) {
+      console.error('Cognito user creation failed:', cognitoError);
+      return errorResponse(500, 'Failed to create user account', [cognitoError.message]);
+    }
+
     const savedEmployee = await DynamoDBService.createEmployee(employee.toDynamoDB());
 
-    return successResponse(201, savedEmployee, 'Employee created successfully');
+    return successResponse(201, {
+      employee: savedEmployee,
+      temporaryPassword: temporaryPassword,
+      message: 'Employee created successfully. User must change password on first login.'
+    }, 'Employee created successfully');
   } catch (error) {
     console.error('Create Employee Error:', error);
     

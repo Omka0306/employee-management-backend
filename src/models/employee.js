@@ -1,11 +1,10 @@
-/**
- * Employee Model Schema
- * Defines the structure and validation for employee data
- */
 class Employee {
   constructor(data) {
     // employeeId will be set by the service layer (numeric format)
     this.employeeId = data.employeeId;
+    this.companyId = data.companyId; // Required: Company association
+    this.role = data.role || 'employee'; // admin, manager, employee
+    this.cognitoUserId = data.cognitoUserId || ''; // Cognito user sub
     this.firstName = data.firstName;
     this.middleName = data.middleName || '';
     this.lastName = data.lastName;
@@ -23,14 +22,20 @@ class Employee {
     this.updatedBy = data.updatedBy || '';
   }
 
-  /**
-   * Validate employee data
-   * @returns {Object} { isValid: boolean, errors: string[] }
-   */
   validate() {
     const errors = [];
 
     // Required fields validation
+    if (!this.companyId || this.companyId.trim() === '') {
+      errors.push('Company ID is required');
+    }
+
+    // Role validation
+    const validRoles = ['admin', 'manager', 'employee'];
+    if (!validRoles.includes(this.role)) {
+      errors.push('Role must be one of: admin, manager, employee');
+    }
+
     if (!this.firstName || this.firstName.trim() === '') {
       errors.push('First name is required');
     }
@@ -86,33 +91,22 @@ class Employee {
     };
   }
 
-  /**
-   * Validate email format
-   * @param {string} email 
-   * @returns {boolean}
-   */
   isValidEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   }
 
-  /**
-   * Validate mobile number format (10 digits)
-   * @param {string} mobile 
-   * @returns {boolean}
-   */
   isValidMobile(mobile) {
     const mobileRegex = /^[0-9]{10}$/;
     return mobileRegex.test(mobile.replace(/[\s-]/g, ''));
   }
 
-  /**
-   * Convert to DynamoDB item format
-   * @returns {Object}
-   */
   toDynamoDB() {
     return {
       employeeId: this.employeeId,
+      companyId: this.companyId,
+      role: this.role,
+      cognitoUserId: this.cognitoUserId,
       firstName: this.firstName,
       middleName: this.middleName,
       lastName: this.lastName,
@@ -132,13 +126,11 @@ class Employee {
     };
   }
 
-  /**
-   * Convert to API response format
-   * @returns {Object}
-   */
   toJSON() {
     return {
       employeeId: this.employeeId,
+      companyId: this.companyId,
+      role: this.role,
       firstName: this.firstName,
       middleName: this.middleName,
       lastName: this.lastName,

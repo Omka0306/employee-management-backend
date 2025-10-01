@@ -14,6 +14,7 @@ provider:
   
   environment:
     EMPLOYEES_TABLE: ${self:service}-employees-${self:provider.stage}
+    COMPANIES_TABLE: ${self:service}-companies-${self:provider.stage}
     COGNITO_USER_POOL_ID: ${env:COGNITO_USER_POOL_ID}
     COGNITO_APP_CLIENT_ID: ${env:COGNITO_APP_CLIENT_ID}
     COGNITO_APP_CLIENT_SECRET: ${env:COGNITO_APP_CLIENT_SECRET}
@@ -35,6 +36,21 @@ provider:
           Resource:
             - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.EMPLOYEES_TABLE}"
             - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.EMPLOYEES_TABLE}/index/*"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.COMPANIES_TABLE}"
+            - "arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.COMPANIES_TABLE}/index/*"
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminCreateUser
+            - cognito-idp:AdminSetUserPassword
+            - cognito-idp:AdminAddUserToGroup
+            - cognito-idp:AdminGetUser
+            - cognito-idp:AdminUpdateUserAttributes
+            - cognito-idp:AdminDisableUser
+            - cognito-idp:AdminEnableUser
+            - cognito-idp:AdminDeleteUser
+            - cognito-idp:ListUsers
+          Resource:
+            - "arn:aws:cognito-idp:${self:provider.region}:*:userpool/${env:COGNITO_USER_POOL_ID}"
 
 functions:
   # Authentication Functions
@@ -158,6 +174,72 @@ functions:
             authorizerId:
               Ref: ApiGatewayAuthorizer
 
+  # Company Functions
+  # Create Company
+  createCompany:
+    handler: src/lambda/companies/create.handler
+    events:
+      - http:
+          path: api/companies
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Get All Companies
+  getAllCompanies:
+    handler: src/lambda/companies/getAll.handler
+    events:
+      - http:
+          path: api/companies
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Get Company by ID
+  getCompany:
+    handler: src/lambda/companies/getById.handler
+    events:
+      - http:
+          path: api/companies/{id}
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Update Company
+  updateCompany:
+    handler: src/lambda/companies/update.handler
+    events:
+      - http:
+          path: api/companies/{id}
+          method: put
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
+  # Delete Company
+  deleteCompany:
+    handler: src/lambda/companies/delete.handler
+    events:
+      - http:
+          path: api/companies/{id}
+          method: delete
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+
 resources:
   Resources:
     # DynamoDB Table for Employees
@@ -171,6 +253,8 @@ resources:
             AttributeType: S
           - AttributeName: email
             AttributeType: S
+          - AttributeName: companyId
+            AttributeType: S
           - AttributeName: createdAt
             AttributeType: S
         KeySchema:
@@ -183,9 +267,48 @@ resources:
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
+          - IndexName: CompanyIndex
+            KeySchema:
+              - AttributeName: companyId
+                KeyType: HASH
+              - AttributeName: createdAt
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
           - IndexName: CreatedAtIndex
             KeySchema:
               - AttributeName: createdAt
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        StreamSpecification:
+          StreamViewType: NEW_AND_OLD_IMAGES
+        PointInTimeRecoverySpecification:
+          PointInTimeRecoveryEnabled: true
+        Tags:
+          - Key: Environment
+            Value: ${self:provider.stage}
+          - Key: Service
+            Value: ${self:service}
+
+    # DynamoDB Table for Companies
+    CompaniesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.COMPANIES_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: companyId
+            AttributeType: S
+          - AttributeName: companyCode
+            AttributeType: S
+        KeySchema:
+          - AttributeName: companyId
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: CompanyCodeIndex
+            KeySchema:
+              - AttributeName: companyCode
                 KeyType: HASH
             Projection:
               ProjectionType: ALL
@@ -248,6 +371,10 @@ resources:
     EmployeesTableName:
       Description: DynamoDB table name for employees
       Value: ${self:provider.environment.EMPLOYEES_TABLE}
+    
+    CompaniesTableName:
+      Description: DynamoDB table name for companies
+      Value: ${self:provider.environment.COMPANIES_TABLE}
 
 plugins:
   - serverless-dotenv-plugin

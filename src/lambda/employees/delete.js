@@ -1,14 +1,23 @@
 const DynamoDBService = require('../../services/dynamodb');
+const CognitoService = require('../../services/cognito');
 const { successResponse, errorResponse } = require('../../helpers/response');
+const { extractUserFromEvent, canDeleteEmployee } = require('../../middlewares/rbac');
 
 /**
  * Lambda handler to delete an employee
+ * Access control based on user role and permissions
  * @param {Object} event - API Gateway event
  * @returns {Object} HTTP response
  */
 exports.handler = async (event) => {
   try {
     console.log('Delete Employee - Event:', JSON.stringify(event, null, 2));
+
+    // Get user info
+    const user = extractUserFromEvent(event);
+    if (!user) {
+      return errorResponse(401, 'Unauthorized');
+    }
 
     // Get employee ID from path parameters
     const employeeId = event.pathParameters?.id;
@@ -21,6 +30,22 @@ exports.handler = async (event) => {
     const employee = await DynamoDBService.getEmployeeById(employeeId);
     if (!employee) {
       return errorResponse(404, 'Employee not found');
+    }
+
+    // Check if user can delete this employee
+    const deleteCheck = canDeleteEmployee(user, employee);
+    if (!deleteCheck.allowed) {
+      return errorResponse(403, deleteCheck.reason);
+    }
+
+    // Delete Cognito user if exists
+    if (employee.email) {
+      try {
+        await CognitoService.deleteUser(employee.email);
+      } catch (cognitoError) {
+        console.error('Cognito user deletion failed:', cognitoError);
+        // Continue with DynamoDB deletion even if Cognito deletion fails
+      }
     }
 
     // Delete from DynamoDB
