@@ -6,7 +6,6 @@ const { extractUserFromEvent, requireRole, canAccessCompany } = require('../../m
 
 exports.handler = async (event) => {
   try {
-
     const user = extractUserFromEvent(event);
     const authCheck = await requireRole('manager')(event);
     if (authCheck) return authCheck;
@@ -58,7 +57,6 @@ exports.handler = async (event) => {
     }
 
     let cognitoUser;
-    let temporaryPassword;
     try {
       const fullName = `${employee.firstName} ${employee.lastName}`;
       cognitoUser = await CognitoService.createUser({
@@ -68,9 +66,7 @@ exports.handler = async (event) => {
         companyId: employee.companyId
       });
       
-      temporaryPassword = cognitoUser.temporaryPassword;
       employee.cognitoUserId = cognitoUser.userSub;
-
       await CognitoService.addUserToGroup(employee.email, employee.role);
     } catch (cognitoError) {
       console.error('Cognito user creation failed:', cognitoError);
@@ -81,8 +77,7 @@ exports.handler = async (event) => {
 
     return successResponse(201, {
       employee: savedEmployee,
-      temporaryPassword: temporaryPassword,
-      message: 'Employee created successfully. User must change password on first login.'
+      message: 'Employee created successfully. Password reset link has been sent to their email.'
     }, 'Employee created successfully');
   } catch (error) {
     console.error('Create Employee Error:', error);

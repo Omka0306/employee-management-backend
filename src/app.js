@@ -2,11 +2,9 @@ const express = require("express");
 const { CognitoJwtVerifier } = require("aws-jwt-verify");
 const authRoutes = require("./routes/auth");
 
-// Initialize Express app
 const app = express();
 app.use(express.json());
 
-// Load required environment variables
 const COGNITO_REGION = process.env.COGNITO_REGION;
 const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
 const COGNITO_APP_CLIENT_ID = process.env.COGNITO_APP_CLIENT_ID;
@@ -14,19 +12,15 @@ const COGNITO_APP_CLIENT_SECRET = process.env.COGNITO_APP_CLIENT_SECRET;
 const COGNITO_TOKEN_USE = process.env.COGNITO_TOKEN_USE || "access";
 
 if (!COGNITO_REGION || !COGNITO_USER_POOL_ID || !COGNITO_APP_CLIENT_ID || !COGNITO_APP_CLIENT_SECRET) {
-  console.warn(
-    "[WARN] Missing one or more Cognito env vars. Auth operations may fail."
-  );
+  console.warn("[WARN] Missing one or more Cognito env vars. Auth operations may fail.");
 }
 
-// Configure AWS Cognito JWT verifier
 const verifier = CognitoJwtVerifier.create({
   userPoolId: COGNITO_USER_POOL_ID,
-  tokenUse: COGNITO_TOKEN_USE, // 'access' (recommended for APIs) or 'id'
+  tokenUse: COGNITO_TOKEN_USE,
   clientId: COGNITO_APP_CLIENT_ID,
 });
 
-// Middleware to protect routes using AWS Cognito JWTs
 async function authenticateCognito(req, res, next) {
   try {
     const authHeader = req.headers["authorization"] || req.headers["Authorization"];
@@ -36,8 +30,6 @@ async function authenticateCognito(req, res, next) {
 
     const token = authHeader.substring("Bearer ".length).trim();
     const payload = await verifier.verify(token);
-
-    // Attach claims to request for downstream handlers
     req.user = payload;
     return next();
   } catch (err) {
@@ -46,19 +38,15 @@ async function authenticateCognito(req, res, next) {
   }
 }
 
-// Public route (no auth)
 app.get("/", (req, res) => {
   res.send("Employee Management Backend is up.");
 });
 
-// Auth routes (sign-up, confirm, sign-in)
 app.use("/auth", authRoutes);
 
-// Swagger API documentation
 const swaggerRoutes = require("./routes/swagger");
 app.use("/api-docs", swaggerRoutes);
 
-// Example protected route
 app.get("/api/secure", authenticateCognito, (req, res) => {
   res.json({
     message: "Secure data",

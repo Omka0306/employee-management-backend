@@ -48,6 +48,7 @@ provider:
             - cognito-idp:AdminDisableUser
             - cognito-idp:AdminEnableUser
             - cognito-idp:AdminDeleteUser
+            - cognito-idp:AdminResetUserPassword
             - cognito-idp:ListUsers
           Resource:
             - "arn:aws:cognito-idp:${self:provider.region}:*:userpool/${env:COGNITO_USER_POOL_ID}"
@@ -75,6 +76,22 @@ functions:
     events:
       - http:
           path: auth/signin
+          method: post
+          cors: true
+
+  forgotPassword:
+    handler: src/lambda/auth/forgot-password.handler
+    events:
+      - http:
+          path: auth/forgot-password
+          method: post
+          cors: true
+
+  resetPassword:
+    handler: src/lambda/auth/reset-password.handler
+    events:
+      - http:
+          path: auth/reset-password
           method: post
           cors: true
 

@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const {
   CognitoIdentityProviderClient,
-  InitiateAuthCommand
+  ForgotPasswordCommand
 } = require('@aws-sdk/client-cognito-identity-provider');
 
 const COGNITO_REGION = process.env.COGNITO_REGION;
@@ -12,6 +12,9 @@ const cognitoClient = new CognitoIdentityProviderClient({
   region: COGNITO_REGION,
 });
 
+/**
+ * Compute SECRET_HASH required for Cognito app clients with a secret.
+ */
 function computeSecretHash(username) {
   const message = username + COGNITO_APP_CLIENT_ID;
   const hmac = crypto.createHmac('sha256', COGNITO_APP_CLIENT_SECRET);
@@ -19,6 +22,10 @@ function computeSecretHash(username) {
   return hmac.digest('base64');
 }
 
+/**
+ * Lambda handler for forgot password
+ * Sends password reset code to user's email
+ */
 exports.handler = async (event) => {
   const headers = {
     'Content-Type': 'application/json',
@@ -29,64 +36,62 @@ exports.handler = async (event) => {
   };
 
   try {
-    const body = JSON.parse(event.body || '{}');
-    const { email, password } = body;
+    console.log('Forgot Password - Event:', JSON.stringify(event, null, 2));
 
-    if (!email || !password) {
+    const body = JSON.parse(event.body || '{}');
+    const { email } = body;
+
+    if (!email) {
       return {
         statusCode: 400,
         headers,
         body: JSON.stringify({
-          message: 'Email and password are required'
+          message: 'Email is required'
         })
       };
     }
 
     const secretHash = computeSecretHash(email);
 
-    const command = new InitiateAuthCommand({
-      AuthFlow: 'USER_PASSWORD_AUTH',
+    const command = new ForgotPasswordCommand({
       ClientId: COGNITO_APP_CLIENT_ID,
-      AuthParameters: {
-        USERNAME: email,
-        PASSWORD: password,
-        SECRET_HASH: secretHash,
-      },
+      Username: email,
+      SecretHash: secretHash
     });
 
-    const response = await cognitoClient.send(command);
-
-    if (!response.AuthenticationResult) {
-      return {
-        statusCode: 400,
-        headers,
-        body: JSON.stringify({
-          message: 'Authentication failed. No tokens returned.',
-        })
-      };
-    }
-
-    const { IdToken, AccessToken, RefreshToken, ExpiresIn } = response.AuthenticationResult;
+    await cognitoClient.send(command);
 
     return {
       statusCode: 200,
       headers,
       body: JSON.stringify({
-        message: 'Sign-in successful',
-        idToken: IdToken,
-        accessToken: AccessToken,
-        refreshToken: RefreshToken,
-        expiresIn: ExpiresIn,
+        message: 'Password reset code sent to your email. Please check your inbox.',
+        email: email
       })
     };
   } catch (error) {
-    console.error('Sign-in error:', error);
+    console.error('Forgot password error:', error);
+    
+    let message = 'Failed to send password reset code';
+    let statusCode = 400;
+
+    if (error.name === 'UserNotFoundException') {
+      message = 'User not found';
+      statusCode = 404;
+    } else if (error.name === 'LimitExceededException') {
+      message = 'Too many requests. Please try again later.';
+      statusCode = 429;
+    } else if (error.name === 'InvalidParameterException') {
+      message = 'Invalid email address';
+      statusCode = 400;
+    }
+
     return {
-      statusCode: 401,
+      statusCode: statusCode,
       headers,
       body: JSON.stringify({
-        message: error.message || 'Sign-in failed',
-        code: error.name,
+        message: message,
+        code: error.name
       })
     };
   }

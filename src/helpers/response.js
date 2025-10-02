@@ -1,14 +1,3 @@
-/**
- * Helper functions for Lambda HTTP responses
- */
-
-/**
- * Create a success response
- * @param {number} statusCode 
- * @param {Object} data 
- * @param {string} message 
- * @returns {Object}
- */
 function successResponse(statusCode, data, message = 'Success') {
   return {
     statusCode,
@@ -27,13 +16,6 @@ function successResponse(statusCode, data, message = 'Success') {
   };
 }
 
-/**
- * Create an error response
- * @param {number} statusCode 
- * @param {string} message 
- * @param {Array} errors 
- * @returns {Object}
- */
 function errorResponse(statusCode, message, errors = []) {
   return {
     statusCode,
@@ -52,11 +34,6 @@ function errorResponse(statusCode, message, errors = []) {
   };
 }
 
-/**
- * Parse request body
- * @param {Object} event 
- * @returns {Object}
- */
 function parseBody(event) {
   try {
     return event.body ? JSON.parse(event.body) : {};
@@ -65,11 +42,6 @@ function parseBody(event) {
   }
 }
 
-/**
- * Extract user information from Cognito authorizer
- * @param {Object} event 
- * @returns {Object}
- */
 function getUserFromEvent(event) {
   if (event.requestContext && event.requestContext.authorizer) {
     const claims = event.requestContext.authorizer.claims;

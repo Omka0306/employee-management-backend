@@ -12,9 +12,6 @@ const cognitoClient = new CognitoIdentityProviderClient({
   region: COGNITO_REGION,
 });
 
-/**
- * Compute SECRET_HASH required for Cognito app clients with a secret.
- */
 function computeSecretHash(username) {
   const message = username + COGNITO_APP_CLIENT_ID;
   const hmac = crypto.createHmac('sha256', COGNITO_APP_CLIENT_SECRET);
@@ -22,9 +19,6 @@ function computeSecretHash(username) {
   return hmac.digest('base64');
 }
 
-/**
- * Lambda handler for user sign up
- */
 exports.handler = async (event) => {
   const headers = {
     'Content-Type': 'application/json',
@@ -35,8 +29,6 @@ exports.handler = async (event) => {
   };
 
   try {
-    console.log('Sign Up - Event:', JSON.stringify(event, null, 2));
-
     const body = JSON.parse(event.body || '{}');
     const { email, password, name } = body;
 

@@ -9,7 +9,8 @@ const {
   AdminDisableUserCommand,
   AdminEnableUserCommand,
   AdminDeleteUserCommand,
-  ListUsersCommand
+  ListUsersCommand,
+  AdminResetUserPasswordCommand
 } = require('@aws-sdk/client-cognito-identity-provider');
 
 const COGNITO_REGION = process.env.COGNITO_REGION;
@@ -17,15 +18,10 @@ const COGNITO_USER_POOL_ID = process.env.COGNITO_USER_POOL_ID;
 const COGNITO_APP_CLIENT_ID = process.env.COGNITO_APP_CLIENT_ID;
 const COGNITO_APP_CLIENT_SECRET = process.env.COGNITO_APP_CLIENT_SECRET;
 
-// Initialize AWS Cognito client
 const cognitoClient = new CognitoIdentityProviderClient({
   region: COGNITO_REGION,
 });
 
-/**
- * Compute SECRET_HASH required for Cognito app clients with a secret.
- * Formula: Base64(HMAC_SHA256(username + clientId, clientSecret))
- */
 function computeSecretHash(username) {
   const message = username + COGNITO_APP_CLIENT_ID;
   const hmac = crypto.createHmac('sha256', COGNITO_APP_CLIENT_SECRET);
@@ -33,39 +29,24 @@ function computeSecretHash(username) {
   return hmac.digest('base64');
 }
 
-/**
- * Generate a random temporary password
- * @returns {string}
- */
 function generateTemporaryPassword() {
   const length = 12;
   const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
   let password = '';
   
-  // Ensure at least one of each required character type
-  password += 'A'; // uppercase
-  password += 'a'; // lowercase
-  password += '1'; // number
-  password += '!'; // special char
+  password += 'A';
+  password += 'a';
+  password += '1';
+  password += '!';
   
-  // Fill the rest randomly
   for (let i = password.length; i < length; i++) {
     password += charset.charAt(Math.floor(Math.random() * charset.length));
   }
   
-  // Shuffle the password
   return password.split('').sort(() => Math.random() - 0.5).join('');
 }
 
-/**
- * Cognito Service for User Management
- */
 class CognitoService {
-  /**
-   * Create a new user in Cognito
-   * @param {Object} userData - User data
-   * @returns {Promise<Object>}
-   */
   static async createUser(userData) {
     const { email, name, role, companyId } = userData;
     const temporaryPassword = generateTemporaryPassword();
@@ -82,17 +63,33 @@ class CognitoService {
           { Name: 'custom:companyId', Value: companyId }
         ],
         TemporaryPassword: temporaryPassword,
-        DesiredDeliveryMediums: ['EMAIL'],
-        MessageAction: 'SUPPRESS' // We'll send custom email with temp password
+        MessageAction: 'SUPPRESS'
       });
 
       const response = await cognitoClient.send(command);
 
+      const setPasswordCommand = new AdminSetUserPasswordCommand({
+        UserPoolId: COGNITO_USER_POOL_ID,
+        Username: email,
+        Password: temporaryPassword,
+        Permanent: true
+      });
+
+      await cognitoClient.send(setPasswordCommand);
+
+      const resetCommand = new AdminResetUserPasswordCommand({
+        UserPoolId: COGNITO_USER_POOL_ID,
+        Username: email
+      });
+
+      await cognitoClient.send(resetCommand);
+
       return {
         userSub: response.User.Username,
         email: email,
-        temporaryPassword: temporaryPassword,
-        status: response.User.UserStatus
+        temporaryPassword: null,
+        status: 'RESET_REQUIRED',
+        message: 'Password reset link sent to user email'
       };
     } catch (error) {
       console.error('Cognito create user error:', error);
@@ -100,12 +97,6 @@ class CognitoService {
     }
   }
 
-  /**
-   * Add user to a Cognito group (for role-based access)
-   * @param {string} username - Cognito username (email)
-   * @param {string} groupName - Group name (admin, manager, employee)
-   * @returns {Promise<void>}
-   */
   static async addUserToGroup(username, groupName) {
     try {
       const command = new AdminAddUserToGroupCommand({
@@ -117,18 +108,10 @@ class CognitoService {
       await cognitoClient.send(command);
     } catch (error) {
       console.error('Cognito add user to group error:', error);
-      // Don't throw error if group doesn't exist - groups are optional
       console.warn(`Warning: Could not add user to group ${groupName}. Group may not exist.`);
     }
   }
 
-  /**
-   * Set permanent password for user (admin action)
-   * @param {string} username - Cognito username (email)
-   * @param {string} password - New password
-   * @param {boolean} permanent - Whether password is permanent
-   * @returns {Promise<void>}
-   */
   static async setUserPassword(username, password, permanent = true) {
     try {
       const command = new AdminSetUserPasswordCommand({
@@ -145,11 +128,6 @@ class CognitoService {
     }
   }
 
-  /**
-   * Get user details from Cognito
-   * @param {string} username - Cognito username (email)
-   * @returns {Promise<Object>}
-   */
   static async getUser(username) {
     try {
       const command = new AdminGetUserCommand({
@@ -159,7 +137,6 @@ class CognitoService {
 
       const response = await cognitoClient.send(command);
       
-      // Parse user attributes
       const attributes = {};
       response.UserAttributes.forEach(attr => {
         attributes[attr.Name] = attr.Value;
@@ -183,12 +160,6 @@ class CognitoService {
     }
   }
 
-  /**
-   * Update user attributes
-   * @param {string} username - Cognito username (email)
-   * @param {Object} attributes - Attributes to update
-   * @returns {Promise<void>}
-   */
   static async updateUserAttributes(username, attributes) {
     try {
       const userAttributes = [];
@@ -220,11 +191,6 @@ class CognitoService {
     }
   }
 
-  /**
-   * Disable user account
-   * @param {string} username - Cognito username (email)
-   * @returns {Promise<void>}
-   */
   static async disableUser(username) {
     try {
       const command = new AdminDisableUserCommand({
@@ -239,11 +205,6 @@ class CognitoService {
     }
   }
 
-  /**
-   * Enable user account
-   * @param {string} username - Cognito username (email)
-   * @returns {Promise<void>}
-   */
   static async enableUser(username) {
     try {
       const command = new AdminEnableUserCommand({
@@ -258,11 +219,6 @@ class CognitoService {
     }
   }
 
-  /**
-   * Delete user account
-   * @param {string} username - Cognito username (email)
-   * @returns {Promise<void>}
-   */
   static async deleteUser(username) {
     try {
       const command = new AdminDeleteUserCommand({
@@ -277,11 +233,6 @@ class CognitoService {
     }
   }
 
-  /**
-   * List all users (with optional filter)
-   * @param {Object} options - Filter options
-   * @returns {Promise<Array>}
-   */
   static async listUsers(options = {}) {
     try {
       const { limit = 60, paginationToken, filter } = options;
