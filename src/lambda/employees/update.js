@@ -4,33 +4,23 @@ const CognitoService = require('../../services/cognito');
 const { successResponse, errorResponse, parseBody } = require('../../helpers/response');
 const { extractUserFromEvent, canModifyEmployee } = require('../../middlewares/rbac');
 
-/**
- * Lambda handler to update an employee
- * Access control based on user role and permissions
- * @param {Object} event - API Gateway event
- * @returns {Object} HTTP response
- */
 exports.handler = async (event) => {
   try {
     console.log('Update Employee - Event:', JSON.stringify(event, null, 2));
 
-    // Get user info
     const user = extractUserFromEvent(event);
     if (!user) {
       return errorResponse(401, 'Unauthorized');
     }
 
-    // Get employee ID from path parameters
     const employeeId = event.pathParameters?.id;
 
     if (!employeeId) {
       return errorResponse(400, 'Employee ID is required');
     }
 
-    // Parse request body
     const body = parseBody(event);
 
-    // Check if employee exists
     const existingEmployee = await DynamoDBService.getEmployeeById(employeeId);
     if (!existingEmployee) {
       return errorResponse(404, 'Employee not found');

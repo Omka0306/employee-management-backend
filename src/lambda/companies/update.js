@@ -3,17 +3,10 @@ const DynamoDBService = require('../../services/dynamodb');
 const { successResponse, errorResponse, parseBody } = require('../../helpers/response');
 const { extractUserFromEvent, requireRole } = require('../../middlewares/rbac');
 
-/**
- * Lambda handler to update a company
- * Only admins can update companies
- * @param {Object} event - API Gateway event
- * @returns {Object} HTTP response
- */
 exports.handler = async (event) => {
   try {
     console.log('Update Company - Event:', JSON.stringify(event, null, 2));
 
-    // Check authorization
     const user = extractUserFromEvent(event);
     const authCheck = await requireRole('admin')(event);
     if (authCheck) return authCheck;
@@ -23,16 +16,13 @@ exports.handler = async (event) => {
       return errorResponse(400, 'Company ID is required');
     }
 
-    // Parse request body
     const updates = parseBody(event);
 
-    // Get existing company
     const existingCompany = await DynamoDBService.getCompanyById(companyId);
     if (!existingCompany) {
       return errorResponse(404, 'Company not found');
     }
 
-    // If company code is being updated, check for duplicates
     if (updates.companyCode && updates.companyCode !== existingCompany.companyCode) {
       const codeExists = await DynamoDBService.companyCodeExists(updates.companyCode, companyId);
       if (codeExists) {

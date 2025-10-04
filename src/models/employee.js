@@ -1,10 +1,9 @@
 class Employee {
   constructor(data) {
-    // employeeId will be set by the service layer (numeric format)
     this.employeeId = data.employeeId;
-    this.companyId = data.companyId; // Required: Company association
-    this.role = data.role || 'employee'; // admin, manager, employee
-    this.cognitoUserId = data.cognitoUserId || ''; // Cognito user sub
+    this.companyId = data.companyId;
+    this.role = data.role || 'employee';
+    this.cognitoUserId = data.cognitoUserId || '';
     this.firstName = data.firstName;
     this.middleName = data.middleName || '';
     this.lastName = data.lastName;
@@ -15,7 +14,7 @@ class Employee {
     this.department = data.department || '';
     this.dateOfJoining = data.dateOfJoining || new Date().toISOString().split('T')[0];
     this.salary = data.salary || 0;
-    this.status = data.status || 'active'; // active, inactive, terminated
+    this.status = data.status || 'active';
     this.createdAt = data.createdAt || new Date().toISOString();
     this.updatedAt = data.updatedAt || new Date().toISOString();
     this.createdBy = data.createdBy || '';
@@ -25,12 +24,10 @@ class Employee {
   validate() {
     const errors = [];
 
-    // Required fields validation
     if (!this.companyId || this.companyId.trim() === '') {
       errors.push('Company ID is required');
     }
 
-    // Role validation
     const validRoles = ['admin', 'manager', 'employee'];
     if (!validRoles.includes(this.role)) {
       errors.push('Role must be one of: admin, manager, employee');
@@ -60,7 +57,6 @@ class Employee {
       errors.push('Designation is required');
     }
 
-    // Address validation (if provided)
     if (this.address && typeof this.address === 'object') {
       if (this.address.street && typeof this.address.street !== 'string') {
         errors.push('Address street must be a string');
@@ -79,7 +75,6 @@ class Employee {
       }
     }
 
-    // Status validation
     const validStatuses = ['active', 'inactive', 'terminated'];
     if (!validStatuses.includes(this.status)) {
       errors.push('Status must be one of: active, inactive, terminated');

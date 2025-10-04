@@ -45,11 +45,9 @@ exports.handler = async (event) => {
       };
     }
 
-    // Set default role for self-registered users
     const userRole = role || 'employee';
     const userCompanyId = companyId || 'DEFAULT_COMPANY';
 
-    // Validate role
     const validRoles = ['admin', 'manager', 'employee'];
     if (!validRoles.includes(userRole)) {
       return {
@@ -79,7 +77,6 @@ exports.handler = async (event) => {
 
     const response = await cognitoClient.send(command);
 
-    // Add user to appropriate Cognito group based on role
     try {
       const addToGroupCommand = new AdminAddUserToGroupCommand({
         UserPoolId: COGNITO_USER_POOL_ID,

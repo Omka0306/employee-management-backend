@@ -11,9 +11,8 @@ const {
 
 const EMPLOYEES_TABLE = process.env.EMPLOYEES_TABLE;
 const COMPANIES_TABLE = process.env.COMPANIES_TABLE;
-const COUNTER_TABLE = process.env.EMPLOYEES_TABLE; // Use same table for counter
+const COUNTER_TABLE = process.env.EMPLOYEES_TABLE;
 
-// Initialize DynamoDB Client
 const client = new DynamoDBClient({
   region: process.env.COGNITO_REGION || 'ap-south-1'
 });
@@ -25,14 +24,7 @@ const docClient = DynamoDBDocumentClient.from(client, {
   }
 });
 
-/**
- * DynamoDB Service for Employee Operations
- */
 class DynamoDBService {
-  /**
-   * Get next employee ID (auto-increment)
-   * @returns {Promise<string>}
-   */
   static async getNextEmployeeId() {
     const params = {
       TableName: COUNTER_TABLE,
@@ -51,20 +43,14 @@ class DynamoDBService {
     try {
       const result = await docClient.send(new UpdateCommand(params));
       const nextId = result.Attributes.counter;
-      return `EMP${String(nextId).padStart(6, '0')}`; // Format: EMP001001, EMP001002, etc.
+      return `EMP${String(nextId).padStart(6, '0')}`;
     } catch (error) {
       console.error('Error generating employee ID:', error);
       throw new Error('Failed to generate employee ID');
     }
   }
 
-  /**
-   * Create a new employee
-   * @param {Object} employee - Employee data
-   * @returns {Promise<Object>}
-   */
   static async createEmployee(employee) {
-    // Generate numeric employee ID
     const employeeId = await this.getNextEmployeeId();
     employee.employeeId = employeeId;
     const params = {
@@ -84,11 +70,6 @@ class DynamoDBService {
     }
   }
 
-  /**
-   * Get employee by ID
-   * @param {string} employeeId 
-   * @returns {Promise<Object|null>}
-   */
   static async getEmployeeById(employeeId) {
     const params = {
       TableName: EMPLOYEES_TABLE,
@@ -99,11 +80,6 @@ class DynamoDBService {
     return result.Item || null;
   }
 
-  /**
-   * Get all employees with optional filtering
-   * @param {Object} options - Query options (limit, lastKey, status)
-   * @returns {Promise<Object>}
-   */
   static async getAllEmployees(options = {}) {
     const { limit = 50, lastKey, status } = options;
 
@@ -131,19 +107,11 @@ class DynamoDBService {
     };
   }
 
-  /**
-   * Update employee
-   * @param {string} employeeId 
-   * @param {Object} updates - Fields to update
-   * @returns {Promise<Object>}
-   */
   static async updateEmployee(employeeId, updates) {
-    // Build update expression dynamically
     const updateExpressions = [];
     const expressionAttributeNames = {};
     const expressionAttributeValues = {};
 
-    // Fields that should not be updated by user
     const excludedFields = ['employeeId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'];
 
     Object.keys(updates).forEach((key, index) => {
@@ -156,12 +124,10 @@ class DynamoDBService {
       }
     });
 
-    // Always update the updatedAt timestamp
     updateExpressions.push('#updatedAt = :updatedAt');
     expressionAttributeNames['#updatedAt'] = 'updatedAt';
     expressionAttributeValues[':updatedAt'] = new Date().toISOString();
 
-    // Update updatedBy if provided in updates
     if (updates.updatedBy) {
       updateExpressions.push('#updatedBy = :updatedBy');
       expressionAttributeNames['#updatedBy'] = 'updatedBy';
@@ -189,11 +155,6 @@ class DynamoDBService {
     }
   }
 
-  /**
-   * Delete employee
-   * @param {string} employeeId 
-   * @returns {Promise<boolean>}
-   */
   static async deleteEmployee(employeeId) {
     const params = {
       TableName: EMPLOYEES_TABLE,
@@ -212,11 +173,6 @@ class DynamoDBService {
     }
   }
 
-  /**
-   * Search employees by name or email
-   * @param {string} searchTerm 
-   * @returns {Promise<Array>}
-   */
   static async searchEmployees(searchTerm) {
     const params = {
       TableName: EMPLOYEES_TABLE,
@@ -234,11 +190,6 @@ class DynamoDBService {
     return result.Items || [];
   }
 
-  /**
-   * Get employee by email
-   * @param {string} email 
-   * @returns {Promise<Object|null>}
-   */
   static async getEmployeeByEmail(email) {
     const params = {
       TableName: EMPLOYEES_TABLE,
@@ -256,12 +207,6 @@ class DynamoDBService {
     return result.Items && result.Items.length > 0 ? result.Items[0] : null;
   }
 
-  /**
-   * Check if email exists (for duplicate validation)
-   * @param {string} email 
-   * @param {string} excludeEmployeeId - Employee ID to exclude from check
-   * @returns {Promise<boolean>}
-   */
   static async emailExists(email, excludeEmployeeId = null) {
     const employee = await this.getEmployeeByEmail(email);
     
@@ -276,12 +221,6 @@ class DynamoDBService {
     return true;
   }
 
-  /**
-   * Get employees by company ID
-   * @param {string} companyId 
-   * @param {Object} options - Query options (limit, lastKey, status)
-   * @returns {Promise<Object>}
-   */
   static async getEmployeesByCompany(companyId, options = {}) {
     const { limit = 50, lastKey, status } = options;
 
@@ -317,12 +256,7 @@ class DynamoDBService {
     };
   }
 
-  // ==================== COMPANY OPERATIONS ====================
 
-  /**
-   * Get next company ID (auto-increment)
-   * @returns {Promise<string>}
-   */
   static async getNextCompanyId() {
     const params = {
       TableName: COMPANIES_TABLE,
@@ -341,20 +275,14 @@ class DynamoDBService {
     try {
       const result = await docClient.send(new UpdateCommand(params));
       const nextId = result.Attributes.counter;
-      return `COMP${String(nextId).padStart(5, '0')}`; // Format: COMP00101, COMP00102, etc.
+      return `COMP${String(nextId).padStart(5, '0')}`;
     } catch (error) {
       console.error('Error generating company ID:', error);
       throw new Error('Failed to generate company ID');
     }
   }
 
-  /**
-   * Create a new company
-   * @param {Object} company - Company data
-   * @returns {Promise<Object>}
-   */
   static async createCompany(company) {
-    // Generate company ID
     const companyId = await this.getNextCompanyId();
     company.companyId = companyId;
 
@@ -375,11 +303,6 @@ class DynamoDBService {
     }
   }
 
-  /**
-   * Get company by ID
-   * @param {string} companyId 
-   * @returns {Promise<Object|null>}
-   */
   static async getCompanyById(companyId) {
     const params = {
       TableName: COMPANIES_TABLE,
@@ -390,11 +313,6 @@ class DynamoDBService {
     return result.Item || null;
   }
 
-  /**
-   * Get company by code
-   * @param {string} companyCode 
-   * @returns {Promise<Object|null>}
-   */
   static async getCompanyByCode(companyCode) {
     const params = {
       TableName: COMPANIES_TABLE,
@@ -412,11 +330,6 @@ class DynamoDBService {
     return result.Items && result.Items.length > 0 ? result.Items[0] : null;
   }
 
-  /**
-   * Get all companies
-   * @param {Object} options - Query options (limit, lastKey, status)
-   * @returns {Promise<Object>}
-   */
   static async getAllCompanies(options = {}) {
     const { limit = 50, lastKey, status } = options;
 
@@ -444,19 +357,11 @@ class DynamoDBService {
     };
   }
 
-  /**
-   * Update company
-   * @param {string} companyId 
-   * @param {Object} updates - Fields to update
-   * @returns {Promise<Object>}
-   */
   static async updateCompany(companyId, updates) {
-    // Build update expression dynamically
     const updateExpressions = [];
     const expressionAttributeNames = {};
     const expressionAttributeValues = {};
 
-    // Fields that should not be updated by user
     const excludedFields = ['companyId', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'];
 
     Object.keys(updates).forEach((key, index) => {
@@ -469,12 +374,10 @@ class DynamoDBService {
       }
     });
 
-    // Always update the updatedAt timestamp
     updateExpressions.push('#updatedAt = :updatedAt');
     expressionAttributeNames['#updatedAt'] = 'updatedAt';
     expressionAttributeValues[':updatedAt'] = new Date().toISOString();
 
-    // Update updatedBy if provided in updates
     if (updates.updatedBy) {
       updateExpressions.push('#updatedBy = :updatedBy');
       expressionAttributeNames['#updatedBy'] = 'updatedBy';
@@ -502,11 +405,6 @@ class DynamoDBService {
     }
   }
 
-  /**
-   * Delete company
-   * @param {string} companyId 
-   * @returns {Promise<boolean>}
-   */
   static async deleteCompany(companyId) {
     const params = {
       TableName: COMPANIES_TABLE,
@@ -525,12 +423,6 @@ class DynamoDBService {
     }
   }
 
-  /**
-   * Check if company code exists
-   * @param {string} companyCode 
-   * @param {string} excludeCompanyId - Company ID to exclude from check
-   * @returns {Promise<boolean>}
-   */
   static async companyCodeExists(companyCode, excludeCompanyId = null) {
     const company = await this.getCompanyByCode(companyCode);
     

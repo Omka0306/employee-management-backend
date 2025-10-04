@@ -2,13 +2,13 @@ class Company {
   constructor(data) {
     this.companyId = data.companyId;
     this.companyName = data.companyName;
-    this.companyCode = data.companyCode; // Unique short code
+    this.companyCode = data.companyCode;
     this.industry = data.industry || '';
     this.address = data.address || {};
     this.contactEmail = data.contactEmail;
     this.contactPhone = data.contactPhone || '';
     this.website = data.website || '';
-    this.status = data.status || 'active'; // active, inactive, suspended
+    this.status = data.status || 'active';
     this.createdAt = data.createdAt || new Date().toISOString();
     this.updatedAt = data.updatedAt || new Date().toISOString();
     this.createdBy = data.createdBy || '';
@@ -18,7 +18,6 @@ class Company {
   validate() {
     const errors = [];
 
-    // Required fields validation
     if (!this.companyName || this.companyName.trim() === '') {
       errors.push('Company name is required');
     }
@@ -35,7 +34,6 @@ class Company {
       errors.push('Invalid contact email format');
     }
 
-    // Address validation (if provided)
     if (this.address && typeof this.address === 'object') {
       if (this.address.street && typeof this.address.street !== 'string') {
         errors.push('Address street must be a string');
@@ -54,7 +52,6 @@ class Company {
       }
     }
 
-    // Status validation
     const validStatuses = ['active', 'inactive', 'suspended'];
     if (!validStatuses.includes(this.status)) {
       errors.push('Status must be one of: active, inactive, suspended');

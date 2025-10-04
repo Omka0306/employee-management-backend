@@ -9,20 +9,14 @@ const {
 
 const router = express.Router();
 
-// Load Cognito config from environment
 const COGNITO_REGION = process.env.COGNITO_REGION;
 const COGNITO_APP_CLIENT_ID = process.env.COGNITO_APP_CLIENT_ID;
 const COGNITO_APP_CLIENT_SECRET = process.env.COGNITO_APP_CLIENT_SECRET;
 
-// Initialize AWS Cognito client
 const cognitoClient = new CognitoIdentityProviderClient({
   region: COGNITO_REGION,
 });
 
-/**
- * Compute SECRET_HASH required for Cognito app clients with a secret.
- * Formula: Base64(HMAC_SHA256(username + clientId, clientSecret))
- */
 function computeSecretHash(username) {
   const message = username + COGNITO_APP_CLIENT_ID;
   const hmac = crypto.createHmac("sha256", COGNITO_APP_CLIENT_SECRET);
@@ -30,11 +24,6 @@ function computeSecretHash(username) {
   return hmac.digest("base64");
 }
 
-/**
- * POST /auth/signup
- * Body: { email, password, name }
- * Creates a new user in Cognito User Pool.
- */
 router.post("/signup", async (req, res) => {
   try {
     const { email, password, name } = req.body;
@@ -75,11 +64,6 @@ router.post("/signup", async (req, res) => {
   }
 });
 
-/**
- * POST /auth/confirm
- * Body: { email, code }
- * Confirms user registration with the code sent via email/SMS.
- */
 router.post("/confirm", async (req, res) => {
   try {
     const { email, code } = req.body;
@@ -113,11 +97,6 @@ router.post("/confirm", async (req, res) => {
   }
 });
 
-/**
- * POST /auth/signin
- * Body: { email, password }
- * Authenticates user and returns tokens (IdToken, AccessToken, RefreshToken).
- */
 router.post("/signin", async (req, res) => {
   try {
     const { email, password } = req.body;
